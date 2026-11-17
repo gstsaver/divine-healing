@@ -20,6 +20,7 @@ import 'features/manifestation/manifestation_screen.dart';
 import 'features/content_detail/content_detail_screen.dart';
 import 'features/shadow_work/shadow_work_screen.dart';
 import 'features/auth/sign_in_screen.dart';
+import 'features/paywall/paywall_screen.dart';
 import 'features/booking/booking_screen.dart';
 import 'features/legal/delete_account_screen.dart';
 import 'features/legal/privacy_policy_screen.dart';
@@ -72,6 +73,12 @@ GoRouter buildRouter() {
       GoRoute(
         path: '/sign-in',
         builder: (_, __) => const SignInScreen(),
+      ),
+      // Shown on launch to anyone not yet subscribed (see SplashScreen).
+      // Above the shell and dismissible, so the free tier stays reachable.
+      GoRoute(
+        path: '/paywall',
+        builder: (_, __) => const PaywallScreen(),
       ),
 
       // ==================== Shell (bottom nav) ====================
