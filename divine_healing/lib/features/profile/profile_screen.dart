@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../config/plan_fallback.dart';
 import '../../config/stripe_links.dart';
 import '../../models/subscription_status.dart';
 import '../../providers/auth_providers.dart';
@@ -447,6 +448,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   /// The plan cards. On a mobile store they show the real price and current
   /// offer read from the store; on web, or if the store cannot be reached,
   /// they fall back to the static cards and Stripe.
+  ///
+  /// The static figures are the Play base prices (full price after the
+  /// introductory half-price period), in CAD. They are not a second source
+  /// of truth for a phone that successfully loaded [PlanOffer].
   Widget _planSection(BuildContext context, int? sessionCount, String? email) {
     if (!PurchasesService.isAvailable) {
       return _staticPlanCards(context, sessionCount, email);
@@ -468,9 +473,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             context: context,
             sessionCount: sessionCount,
             tag: 'ANNUAL · BEST VALUE',
-            price: 'CAD \$149',
+            price: PlanFallback.annualFull,
             period: '/year',
-            subtitle: 'Save 35% vs monthly',
+            subtitle: PlanFallback.annualTerms,
             highlighted: true,
             paymentLink: StripeLinks.annual,
             annual: true,
@@ -481,9 +486,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             context: context,
             sessionCount: sessionCount,
             tag: 'MONTHLY',
-            price: 'CAD \$19',
+            price: PlanFallback.monthlyFull,
             period: '/month',
-            subtitle: 'Cancel any time',
+            subtitle: PlanFallback.monthlyTerms,
             highlighted: false,
             paymentLink: StripeLinks.monthly,
             annual: false,
@@ -686,7 +691,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 onPressed: () =>
                       _startCheckout(context, paymentLink, email,
                           annual: annual),
-                child: const Text('Start 7-day free trial'),
+                child: const Text(PlanFallback.buttonLabel),
               ),
             ),
           ],

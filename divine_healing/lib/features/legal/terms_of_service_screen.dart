@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../config/plan_fallback.dart';
 import '../../config/support.dart';
 import '../../theme.dart';
 
@@ -10,7 +11,7 @@ import '../../theme.dart';
 class TermsOfServiceScreen extends StatelessWidget {
   const TermsOfServiceScreen({super.key});
 
-  static const _effectiveDate = 'August 27, 2026';
+  static const _effectiveDate = 'November 23, 2026';
   // One definition, in config/support.dart.
   static const _contactEmail = Support.email;
 
@@ -58,13 +59,23 @@ class TermsOfServiceScreen extends StatelessWidget {
                 '$_contactEmail if you suspect unauthorised use.',
               ),
               _h('3. Subscriptions and payment'),
-              _b('Plans', 'We offer Monthly and Annual subscriptions in CAD. '
-                  'Prices are shown in the App and may change with notice.'),
-              _b('Free trial', 'New subscribers may receive a 7-day free '
-                  'trial. Cancel before it ends to avoid being charged.'),
-              _b('Auto-renewal', 'Subscriptions renew automatically at the '
-                  'end of each billing period unless cancelled at least 24 '
-                  'hours before the renewal date.'),
+              _b('Plans', 'We offer a Monthly plan and an Annual plan. The price '
+                  'charged is the price shown in the app at checkout, in your '
+                  'local currency. The full price in Canada is '
+                  '${PlanFallback.monthlyFull} per month or '
+                  '${PlanFallback.annualFull} per year. Prices may change '
+                  'with notice.'),
+              _b('Free trial and introductory price', 'A new subscription may '
+                  'begin with a 7-day free trial, then half price: 50% off '
+                  'for the next 12 monthly payments on the Monthly plan, or '
+                  '50% off for 2 years on the Annual plan. When that '
+                  'introductory period ends, the subscription renews at the '
+                  'full price. Cancel before the trial ends and you will not '
+                  'be charged.'),
+              _b('Auto-renewal', 'Subscriptions renew automatically — at the '
+                  'half price during the introductory period, and at the full '
+                  'price after it — unless cancelled at least 24 hours before '
+                  'the end of the current period.'),
               _b('Cancellations', 'You can cancel at any time from your '
                   'App Store or Google Play account settings. Access '
                   'continues until the end of the paid period.'),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../config/plan_fallback.dart';
 import '../../models/content_session.dart';
 import '../../providers/audio_providers.dart';
 import '../../providers/auth_providers.dart';
@@ -213,6 +214,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen> {
       );
     }
     if (!_hasAccess(s)) {
+      final offers =
+          ref.watch(storePlanOffersProvider).valueOrNull ?? const [];
       return SizedBox(
         width: double.infinity,
         child: ElevatedButton.icon(
@@ -223,7 +226,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen> {
           ),
           onPressed: _promptPaywall,
           icon: const Icon(Icons.lock_open, size: 18),
-          label: const Text('Start 7-day free trial'),
+          label: Text(PlanFallback.lockedButton(offers)),
         ),
       );
     }
@@ -296,6 +299,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen> {
   void _promptPaywall() {
     final signedIn = ref.read(isSignedInProvider);
     final count = ref.read(sessionCountProvider);
+    final offers = ref.read(storePlanOffersProvider).valueOrNull ?? const [];
     final library =
         count == null ? 'every guided session' : '$count guided sessions';
     showDialog<void>(
@@ -303,12 +307,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Unlock the full library'),
         content: Text(
-          signedIn
-              ? 'Start your 7-day free trial to access $library. '
-                  'Cancel any time before the trial ends and you won’t be '
-                  'charged.'
-              : 'Sign in and start your 7-day free trial to access '
-                  '$library.',
+          PlanFallback.unlockMessage(
+            signedIn: signedIn,
+            access: library,
+            offers: offers,
+          ),
         ),
         actions: [
           TextButton(
@@ -323,7 +326,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen> {
               // bar with nothing above it. home_screen has always used go.
               context.go(signedIn ? '/profile' : '/sign-in');
             },
-            child: Text(signedIn ? 'Start free trial' : 'Sign in'),
+            child: Text(
+                signedIn ? PlanFallback.lockedButton(offers) : 'Sign in'),
           ),
         ],
       ),
@@ -373,7 +377,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Start your 7-day free trial to unlock this session.',
+              PlanFallback.playerCaption(
+                  ref.watch(storePlanOffersProvider).valueOrNull ?? const []),
               textAlign: TextAlign.center,
               style: DHTypography.body(size: 13, color: DHColors.secondary),
             ),

@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../config/plan_fallback.dart';
 import '../../models/content_session.dart';
 import '../../providers/audio_providers.dart';
 import '../../providers/auth_providers.dart';
 import '../../providers/content_providers.dart';
+import '../../providers/subscription_providers.dart';
 import '../../theme.dart';
 import '../player/session_playback.dart';
 
@@ -61,17 +63,21 @@ class _MeditationStepState extends ConsumerState<MeditationStep> {
 
   void _promptPaywall() {
     final signedIn = ref.read(isSignedInProvider);
+    final offers = ref.read(storePlanOffersProvider).valueOrNull ?? const [];
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Unlock the full library'),
         content: Text(
-          signedIn
-              ? 'Start your 7-day free trial to listen to the shadow work '
-                  'meditation and every other session. You can still read the '
-                  'explanation and write your reflections.'
-              : 'Sign in and start your 7-day free trial to listen to the '
-                  'shadow work meditation.',
+          PlanFallback.unlockMessage(
+            signedIn: signedIn,
+            access: 'the shadow work meditation and every other session',
+            offers: offers,
+            aside: signedIn
+                ? 'You can still read the explanation and write your '
+                    'reflections.'
+                : null,
+          ),
         ),
         actions: [
           TextButton(
@@ -86,7 +92,8 @@ class _MeditationStepState extends ConsumerState<MeditationStep> {
               // bar with nothing above it. home_screen has always used go.
               context.go(signedIn ? '/profile' : '/sign-in');
             },
-            child: Text(signedIn ? 'Start free trial' : 'Sign in'),
+            child: Text(
+                signedIn ? PlanFallback.lockedButton(offers) : 'Sign in'),
           ),
         ],
       ),

@@ -556,6 +556,12 @@ a { color: var(--plum); }
   color: var(--text-muted);
   margin-left: 4px;
 }
+.plan__offer {
+  margin: -6px 0 18px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
 .plan__list {
   list-style: none;
   margin: 0 0 28px;

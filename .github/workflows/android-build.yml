@@ -90,7 +90,13 @@ jobs:
         env:
           REVENUECAT_ANDROID_KEY: ${{ secrets.REVENUECAT_ANDROID_KEY }}
         run: |
+          # --obfuscate renames Dart symbols. --split-debug-info keeps the
+          # map needed to read a crash. R8 (minifyEnabled in build.gradle.kts)
+          # does the same for Java/Kotlin and writes mapping.txt. Neither
+          # file is committed; both are uploaded with the bundle below.
           flutter build appbundle --release \
+            --obfuscate \
+            --split-debug-info=build/symbols/appbundle \
             --dart-define=SUPABASE_URL=$SUPABASE_URL \
             --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY \
             --dart-define=REVENUECAT_ANDROID_KEY=$REVENUECAT_ANDROID_KEY
@@ -101,6 +107,8 @@ jobs:
           REVENUECAT_ANDROID_KEY: ${{ secrets.REVENUECAT_ANDROID_KEY }}
         run: |
           flutter build apk --release \
+            --obfuscate \
+            --split-debug-info=build/symbols/apk \
             --dart-define=SUPABASE_URL=$SUPABASE_URL \
             --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY \
             --dart-define=REVENUECAT_ANDROID_KEY=$REVENUECAT_ANDROID_KEY
@@ -113,5 +121,7 @@ jobs:
           path: |
             divine_healing/build/app/outputs/bundle/release/*.aab
             divine_healing/build/app/outputs/flutter-apk/*.apk
+            divine_healing/build/app/outputs/mapping/release/mapping.txt
+            divine_healing/build/symbols/
           if-no-files-found: warn
           retention-days: 14
