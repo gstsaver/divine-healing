@@ -25,7 +25,7 @@ An ad can only promise what a subscriber actually gets.
 
 | Brief | Page | Why |
 |---|---|---|
-| Premium $150/year | CAD $149/year | The real price, matching both stores and Stripe |
+| Premium $150/year | CAD $149.99/year full price, after a 7-day free trial and 2 years at half price | Play base price as of 2026-11-23. Monthly full price is CAD $18.99 after the same trial and 12 months at half price. The store shows the local price |
 | Premium includes monthly live meditation, priority booking, intuition development, Reiki sessions | Left out | Not in the app. Free users can book too, and Reiki in the app is an introduction plus booking |
 | "Start with a free grounding meditation" | "Start with a free meditation" | Grounding is a paid session. The free ones are Anxiety Release (10 and 5 min) |
 | Testimonials, 3–5 placeholders | Section held back | Made-up reviews break consumer law and ad-platform policy. Add real ones with permission |

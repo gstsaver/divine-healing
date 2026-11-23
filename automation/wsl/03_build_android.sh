@@ -84,7 +84,13 @@ case "$TARGET" in
       exit 1
     fi
     echo "Building release App Bundle..."
-    flutter build appbundle --release "${DEFINES[@]}"
+    # R8 (minifyEnabled) obfuscates the DEX. These two flags obfuscate the
+    # Dart snapshot and write the symbol files next to the bundle. mapping.txt
+    # is produced by R8 under build/app/outputs/mapping/release/.
+    flutter build appbundle --release \
+      --obfuscate \
+      --split-debug-info=build/symbols/appbundle \
+      "${DEFINES[@]}"
     OUT="build/app/outputs/bundle/release/app-release.aab"
     ;;
   *)

@@ -103,9 +103,10 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
                 // Apple 3.1.2 requires the subscription terms and functional
                 // links to the Terms of Use and Privacy Policy on the paywall.
                 Text(
-                  'Subscriptions renew automatically until cancelled. Cancel '
-                  'anytime in the App Store or Google Play at least 24 hours '
-                  'before renewal.',
+                  'After a free trial or introductory price, subscriptions '
+                  'renew automatically at the full price until cancelled. '
+                  'Cancel anytime in the App Store or Google Play at least '
+                  '24 hours before renewal.',
                   textAlign: TextAlign.center,
                   style: DHTypography.body(size: 11, color: DHColors.secondary),
                 ),

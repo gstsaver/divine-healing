@@ -70,8 +70,24 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // Play's DEX obfuscation check wants 25% or more of the release
+            // bytecode renamed. With both flags off it measured 3%. R8 writes
+            // mapping.txt under build/app/outputs/mapping/release/; that file
+            // is what deobfuscates a Play crash, and it is not uploaded from
+            // here. Dart names are a separate step: flutter build --obfuscate
+            // --split-debug-info. Rules live in proguard-rules.pro.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+            // Native (engine / plugin) symbols, packed into the AAB for Play
+            // crash symbolication. Dart symbols are the split-debug-info
+            // directory, not this.
+            ndk {
+                debugSymbolLevel = "SYMBOL_TABLE"
+            }
         }
     }
 }

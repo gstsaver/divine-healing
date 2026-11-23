@@ -99,8 +99,9 @@ class LibraryScreen extends ConsumerWidget {
               Text(
                 signedIn
                     ? 'New sessions are added here as they are published.'
-                    : 'The full library is here — signing in reveals it, and '
-                        'a free trial unlocks the audio.',
+                    : 'The full library is here — signing in reveals it. '
+                        'A 7-day free trial, then half price, then the full '
+                        'price, unlocks the audio.',
                 style: DHTypography.body(size: 13, height: 1.5),
                 textAlign: TextAlign.center,
               ),
