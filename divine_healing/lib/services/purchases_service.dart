@@ -15,7 +15,7 @@
 library;
 
 import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, kIsWeb, TargetPlatform;
+    show defaultTargetPlatform, kIsWeb, TargetPlatform, visibleForTesting;
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:purchases_flutter/purchases_flutter.dart';
 
@@ -49,12 +49,18 @@ enum PurchaseOutcome {
 /// trial and the intro phase come straight from the offer Google or Apple
 /// returned, so an ineligible customer — who the store gives no offer — sees
 /// the plain renewal price with nothing to undo.
+///
+/// A Play offer can carry both a free trial and a discounted phase
+/// (`trial7d-then-half`). [hasFreeTrial] and [hasDiscount] are then both
+/// true, and [termsLine] states every phase rather than stopping at the
+/// trial.
 class PlanOffer {
   const PlanOffer({
     required this.annual,
     required this.renewalPrice,
     required this.periodLabel,
     this.introPrice,
+    this.introPeriodLabel,
     this.introPhaseLabel,
     this.freeTrialLabel,
     this.percentOff,
@@ -66,17 +72,28 @@ class PlanOffer {
   /// The ongoing price the plan renews at, e.g. "CA$149.99".
   final String renewalPrice;
 
-  /// "/year" or "/month".
+  /// "/year" or "/month", the plan's own renewal period.
   final String periodLabel;
 
   /// The discounted price during the offer, e.g. "CA$74.99", or null when the
   /// person gets no discount.
   final String? introPrice;
 
-  /// How long the discount lasts, e.g. "for the first 2 years".
+  /// Billing-period suffix for [introPrice] when that phase does not bill on
+  /// [periodLabel] — "/3 months" for a phase of three months. Null when the
+  /// discount uses the plan's own period, which is the ordinary case.
+  final String? introPeriodLabel;
+
+  /// How long the discount lasts.
+  ///
+  /// A discount on its own reads "for the first 2 years". A discount that
+  /// follows a free trial reads "for 12 months", because [termsLine] places
+  /// the price in front of it: "then $7.00/month for 12 months".
   final String? introPhaseLabel;
 
-  /// "7-day free trial" when the offer is a free trial rather than a discount.
+  /// "7-day free trial" when the offer starts with a free trial. A following
+  /// discount, when there is one, is [introPrice] rather than a replacement
+  /// for this.
   final String? freeTrialLabel;
 
   /// The discount as a percentage, e.g. 50, for the badge. Null when there is
@@ -85,6 +102,44 @@ class PlanOffer {
 
   bool get hasFreeTrial => freeTrialLabel != null;
   bool get hasDiscount => introPrice != null;
+
+  /// The large figure on the card. A discount shows the discounted price,
+  /// which is also the price charged once a leading free trial ends. A trial
+  /// with no discount shows the renewal price, the same as no offer at all.
+  String get displayPrice => introPrice ?? renewalPrice;
+
+  /// The period printed beside [displayPrice].
+  String get displayPeriodLabel =>
+      hasDiscount && introPeriodLabel != null ? introPeriodLabel! : periodLabel;
+
+  /// The purchase button. A free trial is what begins today, so it wins over
+  /// a discount that only starts once the trial ends. A discount with no
+  /// trial keeps "Get 50% off".
+  String get buttonLabel {
+    if (hasFreeTrial) return 'Start $freeTrialLabel';
+    if (hasDiscount && percentOff != null) return 'Get $percentOff% off';
+    return 'Subscribe';
+  }
+
+  /// The line under the price. Every phase the store will actually charge is
+  /// named: the trial, the discounted run, and the price it renews at.
+  String get termsLine {
+    final renewal = '$renewalPrice$periodLabel';
+    if (hasFreeTrial && hasDiscount) {
+      final phase = introPhaseLabel ?? 'for a limited time';
+      final introPeriod = introPeriodLabel ?? periodLabel;
+      return '$freeTrialLabel, then $introPrice$introPeriod $phase, '
+          'then $renewal. Cancel anytime.';
+    }
+    if (hasDiscount) {
+      final phase = introPhaseLabel ?? 'for a limited time';
+      return '$phase, then $renewal. Cancel anytime.';
+    }
+    if (hasFreeTrial) {
+      return '$freeTrialLabel, then $renewal. Cancel anytime.';
+    }
+    return 'Cancel anytime.';
+  }
 }
 
 class PurchasesService {
@@ -185,24 +240,75 @@ class PurchasesService {
   /// ineligible customer, who gets no offer, shows the plain renewal price.
   PlanOffer _describe(Package p) {
     final product = p.storeProduct;
-    final annual = product.identifier.toLowerCase().contains('annual');
+    return describeProduct(
+      identifier: product.identifier,
+      priceString: product.priceString,
+      price: product.price,
+      option: product.defaultOption,
+      introductoryPrice: product.introductoryPrice,
+    );
+  }
+
+  /// Turns a store product into the card copy. Public so the phase mapping
+  /// can be tested without a live store; the paywall calls it through
+  /// [planOffers].
+  ///
+  /// On Android, [SubscriptionOption.freePhase] is the first non-final phase
+  /// priced at zero and [SubscriptionOption.introPhase] is the first non-final
+  /// phase priced above zero. A trial on its own therefore has no intro
+  /// phase — the renewal price is the final phase, and both helpers skip it.
+  /// A trial followed by a discounted run has both, and the card has to say
+  /// so. Stopping at the free phase would advertise "7 days free, then the
+  /// full price" for an offer that charges half price for a year or two
+  /// first.
+  @visibleForTesting
+  static PlanOffer describeProduct({
+    required String identifier,
+    required String priceString,
+    double price = 0,
+    SubscriptionOption? option,
+    IntroductoryPrice? introductoryPrice,
+  }) {
+    final annual = identifier.toLowerCase().contains('annual');
     final period = annual ? '/year' : '/month';
 
-    final option = product.defaultOption;
     if (option != null) {
       // Android.
-      final renewal = option.fullPricePhase?.price.formatted ??
-          product.priceString;
+      final renewal = option.fullPricePhase?.price.formatted ?? priceString;
+      final fullMicros = option.fullPricePhase?.price.amountMicros;
       final free = option.freePhase;
+      final intro = option.introPhase;
       if (free != null) {
+        final trial = _trialLabel(_periodDays(free.billingPeriod));
+        // An intro phase that is not actually cheaper is not a discount.
+        // Treat the offer as a trial alone, which is what a trial-only
+        // option already is — its intro phase is null.
+        final percent = intro == null
+            ? null
+            : _percentOff(intro.price.amountMicros, fullMicros);
+        if (intro != null && percent != null && percent > 0) {
+          final introSuffix = _phasePeriodSuffix(intro.billingPeriod);
+          return PlanOffer(
+            annual: annual,
+            renewalPrice: renewal,
+            periodLabel: period,
+            introPrice: intro.price.formatted,
+            introPeriodLabel: introSuffix != null && introSuffix != period
+                ? introSuffix
+                : null,
+            introPhaseLabel:
+                _forSpan(intro.billingCycleCount ?? 1, intro.billingPeriod),
+            freeTrialLabel: trial,
+            percentOff: percent,
+          );
+        }
         return PlanOffer(
           annual: annual,
           renewalPrice: renewal,
           periodLabel: period,
-          freeTrialLabel: _trialLabel(_periodDays(free.billingPeriod)),
+          freeTrialLabel: trial,
         );
       }
-      final intro = option.introPhase;
       if (intro != null) {
         return PlanOffer(
           annual: annual,
@@ -211,21 +317,20 @@ class PurchasesService {
           introPrice: intro.price.formatted,
           introPhaseLabel: _firstLabel(
               intro.billingCycleCount ?? 1, intro.billingPeriod?.unit),
-          percentOff: _percentOff(
-              intro.price.amountMicros, option.fullPricePhase?.price.amountMicros),
+          percentOff: _percentOff(intro.price.amountMicros, fullMicros),
         );
       }
       return PlanOffer(
           annual: annual, renewalPrice: renewal, periodLabel: period);
     }
 
-    // iOS / StoreKit.
-    final intro = product.introductoryPrice;
+    // iOS / StoreKit. One introductory offer, either a trial or a discount.
+    final intro = introductoryPrice;
     if (intro != null) {
       if (intro.price == 0) {
         return PlanOffer(
           annual: annual,
-          renewalPrice: product.priceString,
+          renewalPrice: priceString,
           periodLabel: period,
           freeTrialLabel: _trialLabel(
               _unitDays(intro.periodUnit, intro.periodNumberOfUnits)),
@@ -233,18 +338,16 @@ class PurchasesService {
       }
       return PlanOffer(
         annual: annual,
-        renewalPrice: product.priceString,
+        renewalPrice: priceString,
         periodLabel: period,
         introPrice: intro.priceString,
         introPhaseLabel: _firstLabel(intro.cycles, intro.periodUnit),
-        percentOff: _percentOff(
-            (intro.price * 1e6).round(), (product.price * 1e6).round()),
+        percentOff:
+            _percentOff((intro.price * 1e6).round(), (price * 1e6).round()),
       );
     }
     return PlanOffer(
-        annual: annual,
-        renewalPrice: product.priceString,
-        periodLabel: period);
+        annual: annual, renewalPrice: priceString, periodLabel: period);
   }
 
   /// The discount as a whole percentage, or null when there is none.
@@ -259,11 +362,50 @@ class PurchasesService {
       days != null ? '$days-day free trial' : 'Free trial';
 
   /// "for the first year", "for the first 2 years", and so on.
+  ///
+  /// Uses the cycle count and the unit only, which is how a discount on its
+  /// own has always been phrased. A trial-then-discount offer uses [_forSpan]
+  /// instead, because that sentence also has to carry the phase's period
+  /// length (four cycles of three months is twelve months, not four).
   static String _firstLabel(int cycles, PeriodUnit? unit) {
     final noun = _unitNoun(unit);
     if (noun == null) return 'for a limited time';
     if (cycles <= 1) return 'for the first $noun';
     return 'for the first $cycles ${noun}s';
+  }
+
+  /// "for 12 months", "for 2 years", "for the first month".
+  ///
+  /// [cycles] is the phase's billing cycle count and [period] is that phase's
+  /// own billing period, so the words match what Play will bill.
+  static String _forSpan(int cycles, Period? period) {
+    final noun = _unitNoun(period?.unit);
+    if (noun == null) return 'for a limited time';
+    final perCycle = period!.value < 1 ? 1 : period.value;
+    final safeCycles = cycles < 1 ? 1 : cycles;
+    final total = safeCycles * perCycle;
+    if (total <= 1) return 'for the first $noun';
+    return 'for $total ${noun}s';
+  }
+
+  /// "/month", "/year", or "/3 months" when a phase bills for more than one
+  /// unit at a time. Null when the period is missing or not a known unit, so
+  /// the caller keeps the plan's own [PlanOffer.periodLabel].
+  static String? _phasePeriodSuffix(Period? period) {
+    if (period == null || period.value < 1) return null;
+    final n = period.value;
+    switch (period.unit) {
+      case PeriodUnit.day:
+        return n == 1 ? '/day' : '/$n days';
+      case PeriodUnit.week:
+        return n == 1 ? '/week' : '/$n weeks';
+      case PeriodUnit.month:
+        return n == 1 ? '/month' : '/$n months';
+      case PeriodUnit.year:
+        return n == 1 ? '/year' : '/$n years';
+      case PeriodUnit.unknown:
+        return null;
+    }
   }
 
   static String? _unitNoun(PeriodUnit? unit) {

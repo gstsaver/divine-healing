@@ -169,28 +169,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
   Widget _offerCard(PlanOffer offer, int? sessionCount) {
     final highlighted = offer.annual;
     final tag = offer.annual ? 'ANNUAL · BEST VALUE' : 'MONTHLY';
-    final bigPrice = offer.introPrice ?? offer.renewalPrice;
-
-    String subline;
-    if (offer.hasDiscount) {
-      final phase = offer.introPhaseLabel ?? 'for a limited time';
-      subline = '$phase, then ${offer.renewalPrice}${offer.periodLabel}. '
-          'Cancel anytime.';
-    } else if (offer.hasFreeTrial) {
-      subline = '${offer.freeTrialLabel}, then ${offer.renewalPrice}'
-          '${offer.periodLabel}. Cancel anytime.';
-    } else {
-      subline = 'Cancel anytime.';
-    }
-
-    final String buttonLabel;
-    if (offer.hasDiscount && offer.percentOff != null) {
-      buttonLabel = 'Get ${offer.percentOff}% off';
-    } else if (offer.hasFreeTrial) {
-      buttonLabel = 'Start ${offer.freeTrialLabel}';
-    } else {
-      buttonLabel = 'Subscribe';
-    }
+    final bigPrice = offer.displayPrice;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -224,14 +203,14 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
               children: [
                 TextSpan(text: bigPrice),
                 TextSpan(
-                  text: offer.periodLabel,
+                  text: offer.displayPeriodLabel,
                   style: DHTypography.body(size: 13, color: DHColors.secondary),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 4),
-          Text(subline,
+          Text(offer.termsLine,
               style: DHTypography.body(size: 12, color: DHColors.secondary)),
           const SizedBox(height: 12),
           ..._benefits(sessionCount).map(
@@ -252,7 +231,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: _busy ? null : () => _buy(annual: offer.annual),
-              child: Text(buttonLabel),
+              child: Text(offer.buttonLabel),
             ),
           ),
         ],
