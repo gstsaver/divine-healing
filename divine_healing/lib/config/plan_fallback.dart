@@ -27,6 +27,29 @@ class PlanFallback {
   /// Button when the store did not return an offer to describe instead.
   static const buttonLabel = 'Start 7-day free trial, then half price';
 
+  /// [terms] plus the auto-renewal the stores require next to the price.
+  /// The static strings keep their original wording; this is what the card
+  /// prints under "$0 today".
+  static String disclose(String terms) {
+    const renew =
+        'Auto-renews until you cancel. Cancel anytime in Google Play or the App Store.';
+    if (terms.contains('Auto-renews')) return terms;
+    if (terms.contains('Cancel anytime.')) {
+      return terms.replaceFirst('Cancel anytime.', renew);
+    }
+    return '$terms $renew';
+  }
+
+  /// Short list under a plan. The last line is the reassurance, not a feature.
+  static List<String> benefits(int? sessionCount) => [
+        sessionCount == null
+            ? 'Every guided meditation'
+            : '$sessionCount guided meditations',
+        'Chakras, breathing, affirmations and journaling',
+        'New sessions as they are published',
+        'Cancel anytime in Google Play or the App Store',
+      ];
+
   /// Locked-content button. A loaded offering wins, so someone the store
   /// has already decided is not eligible for the trial is not promised one.
   static String lockedButton(List<PlanOffer> offers) {
@@ -88,16 +111,18 @@ class PlanFallback {
   static String _lead(bool signedIn, String access, List<PlanOffer> offers) {
     final both = offers.any((o) => o.hasFreeTrial && o.hasDiscount);
     final trial = offers.where((o) => o.hasFreeTrial);
+    // An account is not required to start the trial. Saying "sign in" here
+    // was the step that sent guests away from the purchase.
     if (!signedIn) {
       if (both) {
-        return 'Sign in and start your 7-day free trial, then half price, '
-            'to access $access.';
+        return 'Start your 7-day free trial, then half price, '
+            'to access $access. No account is required.';
       }
       if (trial.isNotEmpty) {
-        return 'Sign in and start your ${trial.first.freeTrialLabel} '
-            'to access $access.';
+        return 'Start your ${trial.first.freeTrialLabel} '
+            'to access $access. No account is required.';
       }
-      return 'Sign in to subscribe and access $access.';
+      return 'Subscribe to access $access. No account is required.';
     }
     if (both) {
       return 'Start your 7-day free trial, then half price, to access $access.';

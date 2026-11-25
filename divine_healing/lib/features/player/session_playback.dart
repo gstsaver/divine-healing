@@ -5,6 +5,7 @@ import '../../providers/audio_providers.dart';
 import '../../providers/content_providers.dart';
 import '../../providers/subscription_providers.dart';
 import '../../repositories/content_repository.dart';
+import '../../services/analytics_service.dart';
 
 /// What happened when a screen asked to play a session.
 enum PlaybackOutcome {
@@ -44,6 +45,8 @@ Future<PlaybackOutcome> togglePlayback(
   }
 
   final player = ref.read(audioHandlerProvider);
+  final wasPlaying =
+      player.currentSessionId == session.id && player.playing;
 
   if (player.currentSessionId != session.id) {
     try {
@@ -62,6 +65,13 @@ Future<PlaybackOutcome> togglePlayback(
   }
 
   await player.togglePlayPause();
+  if (!wasPlaying) {
+    AnalyticsService.instance.logAudioPlay(
+      contentId: session.id.toString(),
+      title: session.title,
+      isPreview: session.isPreview,
+    );
+  }
   return PlaybackOutcome.toggled;
 }
 

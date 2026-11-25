@@ -2,21 +2,27 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../providers/subscription_providers.dart';
+import '../../services/analytics_service.dart';
 import '../../theme.dart';
+import '../paywall/content_gate.dart';
+import '../paywall/open_paywall.dart';
 
 /// Spiritual Awakening — hero text, Benefits, What to Expect, Reflection
 /// Prompts, FAQs, and a "Book coaching with Strawberry Hope" CTA (per client).
-class SpiritualAwakeningScreen extends StatefulWidget {
+class SpiritualAwakeningScreen extends ConsumerStatefulWidget {
   const SpiritualAwakeningScreen({super.key});
 
   @override
-  State<SpiritualAwakeningScreen> createState() =>
+  ConsumerState<SpiritualAwakeningScreen> createState() =>
       _SpiritualAwakeningScreenState();
 }
 
-class _SpiritualAwakeningScreenState extends State<SpiritualAwakeningScreen> {
+class _SpiritualAwakeningScreenState
+    extends ConsumerState<SpiritualAwakeningScreen> {
   Future<_SAData>? _future;
 
   @override
@@ -49,6 +55,7 @@ class _SpiritualAwakeningScreenState extends State<SpiritualAwakeningScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           final d = snap.data!;
+          final hasAccess = ref.watch(hasFullAccessProvider);
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
             children: [
@@ -61,41 +68,68 @@ class _SpiritualAwakeningScreenState extends State<SpiritualAwakeningScreen> {
                 ),
                 const SizedBox(height: 12),
               ],
-              for (final section in d.journey) ...[
-                _JourneyCard(heading: section.heading, body: section.body),
+              for (var i = 0; i < d.journey.length; i++) ...[
+                if (isTasteLocked(hasFullAccess: hasAccess, index: i))
+                  _LockedArticle(
+                    title: d.journey[i].heading,
+                    onTap: () => _openTrial(d.journey[i].heading),
+                  )
+                else
+                  _JourneyCard(
+                    heading: d.journey[i].heading,
+                    body: d.journey[i].body,
+                  ),
                 const SizedBox(height: 12),
               ],
               const SizedBox(height: 8),
-              _ListCard(
-                title: 'Benefits of Awakening',
-                icon: Icons.star_border,
-                iconColor: DHColors.sunlightGold,
-                items: d.benefits,
-              ),
-              const SizedBox(height: 12),
-              _ListCard(
-                title: 'What to Expect',
-                icon: Icons.explore_outlined,
-                iconColor: DHColors.mossGreen,
-                items: d.whatToExpect,
-              ),
-              const SizedBox(height: 12),
-              _ListCard(
-                title: 'Reflection Prompts',
-                icon: Icons.edit_note,
-                iconColor: DHColors.strawberryBlush,
-                items: d.reflectionPrompts,
-                numbered: true,
-                intro: d.reflectionIntro,
-              ),
-              const SizedBox(height: 12),
-              _FaqCard(faqs: d.faqs),
+              if (hasAccess) ...[
+                _ListCard(
+                  title: 'Benefits of Awakening',
+                  icon: Icons.star_border,
+                  iconColor: DHColors.sunlightGold,
+                  items: d.benefits,
+                ),
+                const SizedBox(height: 12),
+                _ListCard(
+                  title: 'What to Expect',
+                  icon: Icons.explore_outlined,
+                  iconColor: DHColors.mossGreen,
+                  items: d.whatToExpect,
+                ),
+                const SizedBox(height: 12),
+                _ListCard(
+                  title: 'Reflection Prompts',
+                  icon: Icons.edit_note,
+                  iconColor: DHColors.strawberryBlush,
+                  items: d.reflectionPrompts,
+                  numbered: true,
+                  intro: d.reflectionIntro,
+                ),
+                const SizedBox(height: 12),
+                _FaqCard(faqs: d.faqs),
+              ] else
+                _LockedArticle(
+                  title: 'Benefits, what to expect, prompts and FAQs',
+                  onTap: () => _openTrial('rest'),
+                ),
               const SizedBox(height: 20),
               _bookingCta(),
             ],
           );
         },
       ),
+    );
+  }
+
+  void _openTrial(String id) {
+    AnalyticsService.instance.logLockedContentTap(
+      contentId: id,
+      contentType: 'article',
+    );
+    openPaywall(
+      context,
+      source: 'locked_article',
+      returnTo: '/spiritual-awakening',
     );
   }
 
@@ -328,6 +362,41 @@ class _FaqCard extends StatelessWidget {
 // ============================================================
 // The Journey — one long-form section
 // ============================================================
+class _LockedArticle extends StatelessWidget {
+  const _LockedArticle({required this.title, required this.onTap});
+
+  final String title;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(DHRadius.card),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(DHRadius.card),
+          border: Border.all(color: DHColors.softSage.withOpacity(0.5)),
+          boxShadow: DHShadows.card,
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.lock_outline, color: DHColors.strawberryBlush),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(title, style: DHTypography.heading(size: 16)),
+            ),
+            const SizedBox(width: 8),
+            const FreeTrialBadge(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _JourneyCard extends StatelessWidget {
   const _JourneyCard({required this.heading, required this.body});
 

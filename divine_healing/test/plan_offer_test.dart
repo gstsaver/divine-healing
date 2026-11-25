@@ -33,11 +33,16 @@ void main() {
       expect(offer.displayPrice, r'$7.00');
       expect(offer.displayPeriodLabel, '/month');
       expect(offer.buttonLabel, 'Start 7-day free trial');
+      expect(offer.trialHeadline, 'Start your 7-day free trial');
+      expect(offer.todayLabel, r'$0 today');
       expect(
         offer.termsLine,
         '7-day free trial, then \$7.00/month for 12 months, '
         'then \$13.99/month. Cancel anytime.',
       );
+      expect(offer.disclosureLine, contains(r'$7.00/month for 12 months'));
+      expect(offer.disclosureLine, contains(r'$13.99/month'));
+      expect(offer.disclosureLine, contains('Auto-renews until you cancel'));
     });
 
     test('annual names the trial, two half-price years, then full price', () {

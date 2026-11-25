@@ -20,6 +20,7 @@ import 'package:flutter/services.dart' show PlatformException;
 import 'package:purchases_flutter/purchases_flutter.dart';
 
 import '../config/env.dart';
+import 'analytics_service.dart';
 
 /// What a purchase attempt did, so the UI can tell the three apart.
 enum PurchaseOutcome {
@@ -140,6 +141,28 @@ class PlanOffer {
     }
     return 'Cancel anytime.';
   }
+
+  /// The line above the price when a free trial is what starts today.
+  ///
+  /// The store's "7-day free trial" becomes "Start your 7-day free trial".
+  String? get trialHeadline =>
+      hasFreeTrial ? 'Start your $freeTrialLabel' : null;
+
+  /// What the person pays today. A trial charges nothing, in every currency,
+  /// so this is not a store-formatted price. The amounts they will be
+  /// charged are [disclosureLine].
+  String get todayLabel => hasFreeTrial ? '\$0 today' : displayPrice;
+
+  /// [termsLine] plus the auto-renewal both stores require beside the price.
+  String get disclosureLine {
+    const renew =
+        'Auto-renews until you cancel. Cancel anytime in Google Play or the App Store.';
+    if (termsLine.contains('Auto-renews')) return termsLine;
+    if (termsLine.contains('Cancel anytime.')) {
+      return termsLine.replaceFirst('Cancel anytime.', renew);
+    }
+    return '$termsLine $renew';
+  }
 }
 
 class PurchasesService {
@@ -153,6 +176,10 @@ class PurchasesService {
 
   bool _configured = false;
   String? lastError;
+
+  /// RevenueCat's error name (`networkError`, `storeProblemError`, …) from
+  /// the last failed purchase. Null after a cancel, which is not a failure.
+  String? lastErrorCode;
 
   /// Whether purchases can run at all here: a mobile build with a key.
   static bool get isAvailable {
@@ -441,23 +468,58 @@ class PurchasesService {
     }
   }
 
-  Future<PurchaseOutcome> buy(Package package) async {
+  Future<PurchaseOutcome> buy(
+    Package package, {
+    bool hasTrial = false,
+  }) async {
     lastError = null;
-    if (!isAvailable) return PurchaseOutcome.failed;
+    lastErrorCode = null;
+    final productId = package.storeProduct.identifier;
+    final annual = productId.toLowerCase().contains('annual');
+    if (!isAvailable) {
+      AnalyticsService.instance.logPurchaseFailed(
+        errorCode: 'unavailable',
+        productId: productId,
+      );
+      return PurchaseOutcome.failed;
+    }
+    // begin_checkout is logged by the screen that resolved the plan. These
+    // two are the explicit trial / purchase-start steps beside it.
+    AnalyticsService.instance.logPurchaseStart(
+      annual: annual,
+      productId: productId,
+      hasTrial: hasTrial,
+    );
+    if (hasTrial) {
+      AnalyticsService.instance.logTrialStart(
+        annual: annual,
+        productId: productId,
+      );
+    }
     try {
       // purchase(PurchaseParams) replaced purchasePackage in 10.x, and
       // returns the transaction alongside the customer info rather than the
       // info on its own.
       final result = await Purchases.purchase(PurchaseParams.package(package));
-      return _entitled(result.customerInfo)
-          ? PurchaseOutcome.purchased
-          : PurchaseOutcome.failed;
+      if (_entitled(result.customerInfo)) return PurchaseOutcome.purchased;
+      lastErrorCode = 'entitlement_missing';
+      AnalyticsService.instance.logPurchaseFailed(
+        errorCode: 'entitlement_missing',
+        productId: productId,
+      );
+      return PurchaseOutcome.failed;
     } on PlatformException catch (e) {
-      if (PurchasesErrorHelper.getErrorCode(e) ==
-          PurchasesErrorCode.purchaseCancelledError) {
+      final code = PurchasesErrorHelper.getErrorCode(e);
+      if (code == PurchasesErrorCode.purchaseCancelledError) {
+        AnalyticsService.instance.logPurchaseCancelled(productId: productId);
         return PurchaseOutcome.cancelled;
       }
+      lastErrorCode = code.name;
       lastError = e.message;
+      AnalyticsService.instance.logPurchaseFailed(
+        errorCode: code.name,
+        productId: productId,
+      );
       return PurchaseOutcome.failed;
     }
   }

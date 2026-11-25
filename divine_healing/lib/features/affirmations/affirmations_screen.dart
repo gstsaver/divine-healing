@@ -7,8 +7,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../providers/subscription_providers.dart';
 import '../../providers/user_data_providers.dart';
+import '../../services/analytics_service.dart';
 import '../../theme.dart';
+import '../paywall/content_gate.dart';
+import '../paywall/open_paywall.dart';
 
 /// Affirmations — 20 statements from assets/content/affirmations.json.
 ///
@@ -101,12 +105,31 @@ class _AffirmationsScreenState extends ConsumerState<AffirmationsScreen> {
     }
   }
 
+  void _openTrial(int index) {
+    AnalyticsService.instance.logLockedContentTap(
+      contentId: '$index',
+      contentType: 'affirmation',
+    );
+    openPaywall(
+      context,
+      source: 'locked_affirmation',
+      returnTo: '/affirmations',
+    );
+  }
+
+  int _dailySpan(bool hasAccess) {
+    if (_all.isEmpty) return 1;
+    if (hasAccess) return _all.length;
+    return min(freeTasteCount, _all.length);
+  }
+
   void _shuffleDaily() {
-    if (_all.length < 2) return;
+    final span = _dailySpan(ref.read(hasFullAccessProvider));
+    if (span < 2) return;
     final rand = Random();
-    var next = _dailyIndex;
-    while (next == _dailyIndex) {
-      next = rand.nextInt(_all.length);
+    var next = _dailyIndex % span;
+    while (next == _dailyIndex % span) {
+      next = rand.nextInt(span);
     }
     setState(() => _dailyIndex = next);
   }
@@ -124,7 +147,12 @@ class _AffirmationsScreenState extends ConsumerState<AffirmationsScreen> {
       ),
       body: !_loaded
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
+          : _list(ref.watch(hasFullAccessProvider)),
+    );
+  }
+
+  Widget _list(bool hasAccess) {
+    return ListView(
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
               children: [
                 _dailyCard(),
@@ -134,13 +162,19 @@ class _AffirmationsScreenState extends ConsumerState<AffirmationsScreen> {
                 ..._visibleEntries().map((e) {
                   final idx = e.key;
                   final text = e.value;
+                  final locked =
+                      isTasteLocked(hasFullAccess: hasAccess, index: idx);
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: _AffirmationTile(
                       index: idx,
                       text: text,
                       favourite: _favourites.contains(idx),
-                      onToggle: () => _toggleFavourite(idx),
+                      locked: locked,
+                      onToggle: locked
+                          ? () => _openTrial(idx)
+                          : () => _toggleFavourite(idx),
+                      onLocked: () => _openTrial(idx),
                     ),
                   );
                 }),
@@ -164,7 +198,6 @@ class _AffirmationsScreenState extends ConsumerState<AffirmationsScreen> {
                     ),
                   ),
               ],
-            ),
     );
   }
 
@@ -177,6 +210,8 @@ class _AffirmationsScreenState extends ConsumerState<AffirmationsScreen> {
   }
 
   Widget _dailyCard() {
+    final span = _dailySpan(ref.watch(hasFullAccessProvider));
+    final shown = _dailyIndex % span;
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
@@ -215,7 +250,7 @@ class _AffirmationsScreenState extends ConsumerState<AffirmationsScreen> {
           ),
           const SizedBox(height: 18),
           Text(
-            _all[_dailyIndex],
+            _all[shown],
             textAlign: TextAlign.center,
             style: DHTypography.heading(
               size: 22,
@@ -231,16 +266,16 @@ class _AffirmationsScreenState extends ConsumerState<AffirmationsScreen> {
           ),
           const SizedBox(height: 12),
           TextButton.icon(
-            onPressed: () => _toggleFavourite(_dailyIndex),
+            onPressed: () => _toggleFavourite(shown),
             icon: Icon(
-              _favourites.contains(_dailyIndex)
+              _favourites.contains(shown)
                   ? Icons.favorite
                   : Icons.favorite_border,
               size: 16,
               color: DHColors.sunlightGold,
             ),
             label: Text(
-              _favourites.contains(_dailyIndex)
+              _favourites.contains(shown)
                   ? 'Saved to favourites'
                   : 'Save to favourites',
               style: DHTypography.button(
@@ -300,17 +335,24 @@ class _AffirmationTile extends StatelessWidget {
     required this.index,
     required this.text,
     required this.favourite,
+    required this.locked,
     required this.onToggle,
+    required this.onLocked,
   });
 
   final int index;
   final String text;
   final bool favourite;
+  final bool locked;
   final VoidCallback onToggle;
+  final VoidCallback onLocked;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return InkWell(
+      onTap: locked ? onLocked : null,
+      borderRadius: BorderRadius.circular(DHRadius.card),
+      child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -331,7 +373,23 @@ class _AffirmationTile extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           Expanded(
-            child: Text(text, style: DHTypography.body(size: 14, height: 1.4)),
+            child: locked
+                ? Row(
+                    children: [
+                      const FreeTrialBadge(),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Part of the free trial',
+                          style: DHTypography.body(
+                            size: 14,
+                            color: DHColors.secondary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : Text(text, style: DHTypography.body(size: 14, height: 1.4)),
           ),
           const SizedBox(width: 8),
           InkWell(
@@ -349,6 +407,7 @@ class _AffirmationTile extends StatelessWidget {
             ),
           ),
         ],
+      ),
       ),
     );
   }

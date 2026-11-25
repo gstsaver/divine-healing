@@ -2,21 +2,26 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../providers/subscription_providers.dart';
+import '../../services/analytics_service.dart';
 import '../../theme.dart';
+import '../paywall/content_gate.dart';
+import '../paywall/open_paywall.dart';
 
 /// Breathing techniques — 7 practices loaded from assets/content/techniques.json.
 ///
 /// Intro card → per-technique accordion (description, numbered steps, benefits).
-class BreathingScreen extends StatefulWidget {
+class BreathingScreen extends ConsumerStatefulWidget {
   const BreathingScreen({super.key});
 
   @override
-  State<BreathingScreen> createState() => _BreathingScreenState();
+  ConsumerState<BreathingScreen> createState() => _BreathingScreenState();
 }
 
-class _BreathingScreenState extends State<BreathingScreen> {
+class _BreathingScreenState extends ConsumerState<BreathingScreen> {
   Future<List<_Technique>>? _future;
 
   @override
@@ -54,13 +59,18 @@ class _BreathingScreenState extends State<BreathingScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           final items = snap.data!;
+          final hasAccess = ref.watch(hasFullAccessProvider);
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
             children: [
               _intro(),
               const SizedBox(height: 20),
-              for (final t in items) ...[
-                _TechniqueCard(technique: t),
+              for (var i = 0; i < items.length; i++) ...[
+                _TechniqueCard(
+                  technique: items[i],
+                  locked: isTasteLocked(hasFullAccess: hasAccess, index: i),
+                  onLocked: () => _openTrial(i),
+                ),
                 const SizedBox(height: 12),
               ],
             ],
@@ -68,6 +78,14 @@ class _BreathingScreenState extends State<BreathingScreen> {
         },
       ),
     );
+  }
+
+  void _openTrial(int index) {
+    AnalyticsService.instance.logLockedContentTap(
+      contentId: '$index',
+      contentType: 'breathing',
+    );
+    openPaywall(context, source: 'locked_breathing', returnTo: '/breathing');
   }
 
   Widget _intro() => Container(
@@ -120,8 +138,14 @@ class _BreathingScreenState extends State<BreathingScreen> {
 // Card
 // ============================================================
 class _TechniqueCard extends StatefulWidget {
-  const _TechniqueCard({required this.technique});
+  const _TechniqueCard({
+    required this.technique,
+    required this.locked,
+    required this.onLocked,
+  });
   final _Technique technique;
+  final bool locked;
+  final VoidCallback onLocked;
 
   @override
   State<_TechniqueCard> createState() => _TechniqueCardState();
@@ -146,7 +170,13 @@ class _TechniqueCardState extends State<_TechniqueCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           InkWell(
-            onTap: () => setState(() => _expanded = !_expanded),
+            onTap: () {
+              if (widget.locked) {
+                widget.onLocked();
+                return;
+              }
+              setState(() => _expanded = !_expanded);
+            },
             borderRadius: BorderRadius.circular(DHRadius.card),
             child: Padding(
               padding: const EdgeInsets.all(14),
@@ -174,17 +204,20 @@ class _TechniqueCardState extends State<_TechniqueCard> {
                       ],
                     ),
                   ),
-                  Icon(
-                    _expanded ? Icons.expand_less : Icons.expand_more,
-                    color: DHColors.forestGreen,
-                  ),
+                  if (widget.locked)
+                    const FreeTrialBadge()
+                  else
+                    Icon(
+                      _expanded ? Icons.expand_less : Icons.expand_more,
+                      color: DHColors.forestGreen,
+                    ),
                 ],
               ),
             ),
           ),
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 220),
-            crossFadeState: _expanded
+            crossFadeState: _expanded && !widget.locked
                 ? CrossFadeState.showSecond
                 : CrossFadeState.showFirst,
             firstChild: const SizedBox(width: double.infinity),

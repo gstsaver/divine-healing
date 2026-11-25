@@ -8,6 +8,8 @@ import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
 
 import '../../config/env.dart';
 import '../../providers/auth_providers.dart';
+import '../../services/analytics_service.dart';
+import '../../services/auth_return.dart';
 import '../../theme.dart';
 
 /// Sign In — Google, Apple (iOS only) and email magic link.
@@ -15,7 +17,10 @@ import '../../theme.dart';
 /// OAuth providers must be enabled in the Supabase Dashboard (Authentication
 /// > Providers). Email magic-link uses Supabase's default SMTP.
 class SignInScreen extends ConsumerStatefulWidget {
-  const SignInScreen({super.key});
+  const SignInScreen({super.key, this.returnTo});
+
+  /// Where to go once sign-in succeeds. Saved before OAuth leaves the app.
+  final String? returnTo;
 
   @override
   ConsumerState<SignInScreen> createState() => _SignInScreenState();
@@ -24,9 +29,14 @@ class SignInScreen extends ConsumerStatefulWidget {
 class _SignInScreenState extends ConsumerState<SignInScreen> {
   bool _busy = false;
 
+  /// Google and the magic link come back through a deep link. The router
+  /// owns that return. Password and the Apple sheet finish on this screen.
+  bool _externalAuth = false;
+
   @override
   void initState() {
     super.initState();
+    AuthReturn.rememberNow(widget.returnTo);
     // If we landed here via auth redirect with an error, surface it once.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final params = GoRouterState.of(context).uri.queryParameters;
@@ -40,6 +50,9 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
   Future<void> _handleApple() async {
     final svc = _requireAuth();
     if (svc == null) return;
+    AnalyticsService.instance.logSignInStart(method: 'apple');
+    _externalAuth = false;
+    await AuthReturn.remember(widget.returnTo);
     setState(() => _busy = true);
     try {
       final completed = await svc.signInWithApple();
@@ -79,12 +92,16 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
   Future<void> _handleGoogle() async {
     final svc = _requireAuth();
     if (svc == null) return;
+    AnalyticsService.instance.logSignInStart(method: 'google');
+    _externalAuth = true;
+    await AuthReturn.remember(widget.returnTo);
     setState(() => _busy = true);
     try {
       await svc.signInWithGoogle();
-      // On success, browser redirects to Supabase → back to app; auth state
-      // provider picks up the session. Nothing else to do here.
+      // On success, browser redirects to Supabase → back to app. The router
+      // sends them to the screen they started from.
     } catch (e) {
+      _externalAuth = false;
       _showError(_friendly(e));
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -101,10 +118,16 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     try {
       final password = entered.password;
       if (password != null) {
+        AnalyticsService.instance.logSignInStart(method: 'password');
+        _externalAuth = false;
+        await AuthReturn.remember(widget.returnTo);
         await svc.signInWithPassword(email: entered.email, password: password);
-        // The auth state provider picks the session up; nothing to show.
+        // The auth listener below leaves this screen.
         return;
       }
+      AnalyticsService.instance.logSignInStart(method: 'email');
+      _externalAuth = true;
+      await AuthReturn.remember(widget.returnTo);
       await svc.sendMagicLink(entered.email);
       if (!mounted) return;
       _showInfo(
@@ -283,8 +306,25 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     );
   }
 
+  void _leaveAfterSignIn() {
+    final dest = AuthReturn.sanitize(widget.returnTo);
+    AuthReturn.clear();
+    if (!mounted) return;
+    if (dest != null && dest.isNotEmpty) {
+      context.go(dest);
+    } else if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    ref.listen<bool>(isSignedInProvider, (previous, next) {
+      if (next != true || previous == true || _externalAuth) return;
+      _leaveAfterSignIn();
+    });
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sign in'),
@@ -317,8 +357,8 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                       textAlign: TextAlign.center),
                   const SizedBox(height: 6),
                   Text(
-                    'Sign in to sync your favourites, journal entries, '
-                    'and continue where you left off.',
+                    'Optional. Signing in syncs your favourites, journal '
+                    'and subscription. The free trial does not need an account.',
                     style: DHTypography.body(
                         size: 13, color: DHColors.secondary),
                     textAlign: TextAlign.center,
@@ -370,7 +410,18 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                   ),
                   const SizedBox(height: 20),
                   OutlinedButton(
-                    onPressed: _busy ? null : () => context.go('/'),
+                    onPressed: _busy
+                        ? null
+                        : () {
+                            final dest = AuthReturn.sanitize(widget.returnTo);
+                            if (dest != null) {
+                              context.go(dest);
+                            } else if (context.canPop()) {
+                              context.pop();
+                            } else {
+                              context.go('/');
+                            }
+                          },
                     child: const Text('Continue as guest'),
                   ),
                   const SizedBox(height: 28),

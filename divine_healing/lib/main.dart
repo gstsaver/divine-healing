@@ -9,10 +9,15 @@ import 'router.dart';
 import 'services/analytics_service.dart';
 import 'services/audio_handler.dart';
 import 'services/auth_service.dart';
+import 'services/engagement_store.dart';
 import 'theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Before the first frame, so MainShell knows whether this is the first
+  // cold start (no automatic paywall) or a later one.
+  await EngagementStore.recordColdStart();
 
   // Firebase Analytics, for Google Ads conversion tracking. Wrapped because
   // until the Firebase project is wired there is no native config and

@@ -6,8 +6,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../providers/auth_providers.dart';
+import '../../providers/subscription_providers.dart';
 import '../../providers/user_data_providers.dart';
+import '../../services/analytics_service.dart';
 import '../../theme.dart';
+import '../paywall/content_gate.dart';
+import '../paywall/open_paywall.dart';
 
 /// Manifestation — 3-step wizard:
 ///   1) Understanding Manifestation (intro text)
@@ -92,11 +96,17 @@ class _ManifestationScreenState extends ConsumerState<ManifestationScreen> {
   }
 
   Widget _stepChild() {
+    final locked = isTasteLocked(
+      hasFullAccess: ref.watch(hasFullAccessProvider),
+      index: 1,
+      freeCount: freeFirstStepCount,
+    );
     if (_step == 0) {
       return _WrittenStep(
         index: 0,
         onNext: () => _goto(1),
-        nextLabel: 'Continue to Inner Work',
+        nextLabel:
+            locked ? 'Continue with free trial' : 'Continue to Inner Work',
       );
     }
     if (_step == 1) {
@@ -124,6 +134,22 @@ class _ManifestationScreenState extends ConsumerState<ManifestationScreen> {
   }
 
   void _goto(int step) {
+    if (isTasteLocked(
+      hasFullAccess: ref.read(hasFullAccessProvider),
+      index: step,
+      freeCount: freeFirstStepCount,
+    )) {
+      AnalyticsService.instance.logLockedContentTap(
+        contentId: 'manifestation',
+        contentType: 'manifestation',
+      );
+      openPaywall(
+        context,
+        source: 'locked_manifestation',
+        returnTo: '/manifestation',
+      );
+      return;
+    }
     setState(() => _step = step);
   }
 
@@ -155,7 +181,9 @@ class _ManifestationScreenState extends ConsumerState<ManifestationScreen> {
           ],
         ),
       );
-      if (go == true && mounted) context.push('/sign-in');
+      if (go == true && mounted) {
+        openSignIn(context, returnTo: '/manifestation');
+      }
       return;
     }
 

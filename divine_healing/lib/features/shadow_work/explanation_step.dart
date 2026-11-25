@@ -15,9 +15,14 @@ import '../../theme.dart';
 /// is what ships, and re-running data/10_extract_shadow_work.js is enough to
 /// pick up any edit she makes.
 class ExplanationStep extends StatefulWidget {
-  const ExplanationStep({super.key, required this.onNext});
+  const ExplanationStep({
+    super.key,
+    required this.onNext,
+    this.nextLabel = 'Start Meditation',
+  });
 
   final VoidCallback onNext;
+  final String nextLabel;
 
   @override
   State<ExplanationStep> createState() => _ExplanationStepState();
@@ -71,7 +76,7 @@ class _ExplanationStepState extends State<ExplanationStep> {
               child: ElevatedButton.icon(
                 onPressed: widget.onNext,
                 icon: const Icon(Icons.headphones, size: 18),
-                label: const Text('Start Meditation'),
+                label: Text(widget.nextLabel),
               ),
             ),
           ],

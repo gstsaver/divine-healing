@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:just_audio/just_audio.dart';
@@ -31,10 +33,16 @@ class DivineHealingAudioHandler extends BaseAudioHandler with SeekHandler {
     );
 
     // A finished session should look replayable rather than stuck at the end.
+    // The id is published before the seek, which moves the player back to
+    // ready and would otherwise hide the fact that it finished.
     _player.processingStateStream.listen((state) async {
       if (state == ProcessingState.completed) {
+        final finished = _currentSession;
         await _player.pause();
         await _player.seek(Duration.zero);
+        if (finished != null && !_sessionCompleted.isClosed) {
+          _sessionCompleted.add(finished);
+        }
       }
     });
 
@@ -52,6 +60,14 @@ class DivineHealingAudioHandler extends BaseAudioHandler with SeekHandler {
 
   int? _currentSessionId;
   int? get currentSessionId => _currentSessionId;
+
+  ContentSession? _currentSession;
+
+  final StreamController<ContentSession> _sessionCompleted =
+      StreamController<ContentSession>.broadcast();
+
+  /// Fires once when the loaded session plays through to the end.
+  Stream<ContentSession> get onSessionCompleted => _sessionCompleted.stream;
 
   /// Set when playback was cut off by something transient (a phone call), so
   /// we know whether resuming afterwards is what the listener expects.
@@ -119,6 +135,7 @@ class DivineHealingAudioHandler extends BaseAudioHandler with SeekHandler {
     required String url,
   }) async {
     if (_currentSessionId == session.id) return;
+    _currentSession = session;
     _currentSessionId = session.id;
 
     // Staged on first use and cached after, so this is a no-op from the second
@@ -170,6 +187,7 @@ class DivineHealingAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> stop() async {
     await _player.stop();
+    _currentSession = null;
     _currentSessionId = null;
     mediaItem.add(null);
     playbackState.add(

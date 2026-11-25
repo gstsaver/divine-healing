@@ -7,8 +7,12 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../providers/auth_providers.dart';
+import '../../providers/subscription_providers.dart';
 import '../../providers/user_data_providers.dart';
+import '../../services/analytics_service.dart';
 import '../../theme.dart';
+import '../paywall/content_gate.dart';
+import '../paywall/open_paywall.dart';
 import 'explanation_step.dart';
 import 'meditation_step.dart';
 
@@ -110,7 +114,9 @@ class _ShadowWorkScreenState extends ConsumerState<ShadowWorkScreen> {
           ],
         ),
       );
-      if (go == true && mounted) context.push('/sign-in');
+      if (go == true && mounted) {
+        openSignIn(context, returnTo: '/shadow-work/${widget.contentId}');
+      }
       return;
     }
 
@@ -178,7 +184,17 @@ class _ShadowWorkScreenState extends ConsumerState<ShadowWorkScreen> {
   }
 
   Widget _stepChild() {
-    if (_step == 0) return ExplanationStep(onNext: () => _goto(1));
+    final locked = isTasteLocked(
+      hasFullAccess: ref.watch(hasFullAccessProvider),
+      index: 1,
+      freeCount: freeFirstStepCount,
+    );
+    if (_step == 0) {
+      return ExplanationStep(
+        onNext: () => _goto(1),
+        nextLabel: locked ? 'Continue with free trial' : 'Start Meditation',
+      );
+    }
     if (_step == 1) {
       return MeditationStep(
         contentId: _contentIdInt,
@@ -198,6 +214,22 @@ class _ShadowWorkScreenState extends ConsumerState<ShadowWorkScreen> {
   }
 
   void _goto(int step) {
+    if (isTasteLocked(
+      hasFullAccess: ref.read(hasFullAccessProvider),
+      index: step,
+      freeCount: freeFirstStepCount,
+    )) {
+      AnalyticsService.instance.logLockedContentTap(
+        contentId: widget.contentId,
+        contentType: 'shadow_work',
+      );
+      openPaywall(
+        context,
+        source: 'locked_shadow_work',
+        returnTo: '/shadow-work/${widget.contentId}',
+      );
+      return;
+    }
     setState(() => _step = step);
   }
 

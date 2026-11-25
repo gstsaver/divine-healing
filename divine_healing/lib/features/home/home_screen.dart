@@ -7,6 +7,7 @@ import '../../providers/auth_providers.dart';
 import '../../providers/content_providers.dart';
 import '../../providers/subscription_providers.dart';
 import '../../theme.dart';
+import '../paywall/open_paywall.dart';
 
 /// Home screen — matches Glide app landing:
 ///   Hero (logo + pill + h1 + p + CTAs) → "What's included" (8 category cards)
@@ -107,8 +108,12 @@ class _Hero extends ConsumerWidget {
               if (selling) ...[
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () => context.go('/profile'),
-                    child: const Text('Subscribe'),
+                    onPressed: () => openPaywall(
+                      context,
+                      source: 'home',
+                      returnTo: '/',
+                    ),
+                    child: const Text('Free trial'),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -289,20 +294,25 @@ class _UnlockCta extends StatelessWidget {
         ),
         child: Column(
           children: [
-            Text('Unlock the full library',
+            Text('Start your 7-day free trial',
                 style: DHTypography.heading(size: 20),
                 textAlign: TextAlign.center),
             const SizedBox(height: 8),
             Text(
-              'Get unlimited access to all meditations, shadow work sessions, '
-              'chakra healing and Reiki guides. New content added regularly.',
+              '\$0 today, then half price, then the full price. '
+              'Cancel anytime in Google Play. Every meditation, plus '
+              'chakras, breathing, affirmations and journaling.',
               style: DHTypography.body(size: 13, color: DHColors.secondary),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
             ElevatedButton(
-              onPressed: () => context.go('/profile'),
-              child: const Text('Subscribe'),
+              onPressed: () => openPaywall(
+                context,
+                source: 'home',
+                returnTo: '/',
+              ),
+              child: const Text('Start free trial'),
             ),
           ],
         ),

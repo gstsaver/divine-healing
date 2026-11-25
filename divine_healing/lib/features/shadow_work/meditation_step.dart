@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
-import '../../config/plan_fallback.dart';
 import '../../models/content_session.dart';
 import '../../providers/audio_providers.dart';
-import '../../providers/auth_providers.dart';
 import '../../providers/content_providers.dart';
-import '../../providers/subscription_providers.dart';
+import '../../services/analytics_service.dart';
 import '../../theme.dart';
+import '../paywall/open_paywall.dart';
 import '../player/session_playback.dart';
 
 /// Step 2 of the Shadow Work journey — the guided meditation itself.
@@ -62,41 +60,14 @@ class _MeditationStepState extends ConsumerState<MeditationStep> {
   }
 
   void _promptPaywall() {
-    final signedIn = ref.read(isSignedInProvider);
-    final offers = ref.read(storePlanOffersProvider).valueOrNull ?? const [];
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Unlock the full library'),
-        content: Text(
-          PlanFallback.unlockMessage(
-            signedIn: signedIn,
-            access: 'the shadow work meditation and every other session',
-            offers: offers,
-            aside: signedIn
-                ? 'You can still read the explanation and write your '
-                    'reflections.'
-                : null,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Not now'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              // go, not push: /profile lives inside the tab shell, and
-              // pushing a branch route on top of the shell renders the
-              // bar with nothing above it. home_screen has always used go.
-              context.go(signedIn ? '/profile' : '/sign-in');
-            },
-            child: Text(
-                signedIn ? PlanFallback.lockedButton(offers) : 'Sign in'),
-          ),
-        ],
-      ),
+    AnalyticsService.instance.logLockedContentTap(
+      contentId: widget.contentId.toString(),
+      contentType: 'shadow_work',
+    );
+    openPaywall(
+      context,
+      source: 'locked_shadow_work',
+      returnTo: '/shadow-work/${widget.contentId}',
     );
   }
 
@@ -270,7 +241,7 @@ class _MeditationStepState extends ConsumerState<MeditationStep> {
               _loading
                   ? 'Loading…'
                   : session == null
-                      ? 'Sign in to listen'
+                      ? 'Tap to start your free trial'
                       : 'Tap to begin',
               style: DHTypography.caption(color: DHColors.sunlightGold),
             ),

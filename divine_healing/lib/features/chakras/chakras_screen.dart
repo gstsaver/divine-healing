@@ -2,22 +2,27 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../providers/subscription_providers.dart';
+import '../../services/analytics_service.dart';
 import '../../theme.dart';
+import '../paywall/content_gate.dart';
+import '../paywall/open_paywall.dart';
 
 /// Chakra Healing — reads the 7 chakras from assets/content/chakras.json.
 ///
 /// Home hero → intro card → expandable per-chakra cards (description,
 /// affirmations, practices, imbalance signs).
-class ChakrasScreen extends StatefulWidget {
+class ChakrasScreen extends ConsumerStatefulWidget {
   const ChakrasScreen({super.key});
 
   @override
-  State<ChakrasScreen> createState() => _ChakrasScreenState();
+  ConsumerState<ChakrasScreen> createState() => _ChakrasScreenState();
 }
 
-class _ChakrasScreenState extends State<ChakrasScreen> {
+class _ChakrasScreenState extends ConsumerState<ChakrasScreen> {
   Future<List<_Chakra>>? _future;
 
   @override
@@ -55,13 +60,18 @@ class _ChakrasScreenState extends State<ChakrasScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           final chakras = snap.data!;
+          final hasAccess = ref.watch(hasFullAccessProvider);
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
             children: [
               _intro(),
               const SizedBox(height: 20),
-              for (final c in chakras) ...[
-                _ChakraCard(chakra: c),
+              for (var i = 0; i < chakras.length; i++) ...[
+                _ChakraCard(
+                  chakra: chakras[i],
+                  locked: isTasteLocked(hasFullAccess: hasAccess, index: i),
+                  onLocked: () => _openTrial(i),
+                ),
                 const SizedBox(height: 12),
               ],
             ],
@@ -69,6 +79,14 @@ class _ChakrasScreenState extends State<ChakrasScreen> {
         },
       ),
     );
+  }
+
+  void _openTrial(int index) {
+    AnalyticsService.instance.logLockedContentTap(
+      contentId: '$index',
+      contentType: 'chakra',
+    );
+    openPaywall(context, source: 'locked_chakra', returnTo: '/chakras');
   }
 
   Widget _intro() => Container(
@@ -122,8 +140,14 @@ class _ChakrasScreenState extends State<ChakrasScreen> {
 // Card
 // ============================================================
 class _ChakraCard extends StatefulWidget {
-  const _ChakraCard({required this.chakra});
+  const _ChakraCard({
+    required this.chakra,
+    required this.locked,
+    required this.onLocked,
+  });
   final _Chakra chakra;
+  final bool locked;
+  final VoidCallback onLocked;
 
   @override
   State<_ChakraCard> createState() => _ChakraCardState();
@@ -148,7 +172,13 @@ class _ChakraCardState extends State<_ChakraCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           InkWell(
-            onTap: () => setState(() => _expanded = !_expanded),
+            onTap: () {
+              if (widget.locked) {
+                widget.onLocked();
+                return;
+              }
+              setState(() => _expanded = !_expanded);
+            },
             borderRadius: BorderRadius.circular(DHRadius.card),
             child: Padding(
               padding: const EdgeInsets.all(14),
@@ -182,17 +212,20 @@ class _ChakraCardState extends State<_ChakraCard> {
                       ],
                     ),
                   ),
-                  Icon(
-                    _expanded ? Icons.expand_less : Icons.expand_more,
-                    color: DHColors.forestGreen,
-                  ),
+                  if (widget.locked)
+                    const FreeTrialBadge()
+                  else
+                    Icon(
+                      _expanded ? Icons.expand_less : Icons.expand_more,
+                      color: DHColors.forestGreen,
+                    ),
                 ],
               ),
             ),
           ),
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 220),
-            crossFadeState: _expanded
+            crossFadeState: _expanded && !widget.locked
                 ? CrossFadeState.showSecond
                 : CrossFadeState.showFirst,
             firstChild: const SizedBox(width: double.infinity),

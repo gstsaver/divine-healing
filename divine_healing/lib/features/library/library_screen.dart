@@ -3,10 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../models/content_session.dart';
-import '../../providers/auth_providers.dart';
 import '../../providers/content_providers.dart';
 import '../../providers/subscription_providers.dart';
+import '../../services/analytics_service.dart';
 import '../../theme.dart';
+import '../paywall/content_gate.dart';
+import '../paywall/open_paywall.dart';
 
 /// Library — every session from `admin_content.json` (or Supabase in M2),
 /// filtered by category, with per-session cards that navigate to the
@@ -27,7 +29,7 @@ class LibraryScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isReiki = category == 'reiki';
     final isChakra = category == 'chakra_healing';
-    final isSignedIn = ref.watch(isSignedInProvider);
+    final hasAccess = ref.watch(hasFullAccessProvider);
     final sessionCount = ref.watch(sessionCountProvider);
 
     // Chakra Healing has no DB rows (all static, hardcoded 7 chakras in
@@ -40,7 +42,7 @@ class LibraryScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('Library')),
       body: Column(
         children: [
-          if (!isSignedIn) _signInPrompt(context, sessionCount),
+          if (!hasAccess) _trialPrompt(context, sessionCount),
           _filterChips(context),
           if (isReiki) _reikiBookingCard(context),
           if (isChakra) _chakraLink(context),
@@ -50,16 +52,13 @@ class LibraryScreen extends ConsumerWidget {
               error: (e, _) => Center(child: Text('Error: $e')),
               data: (list) {
                 if (list.isEmpty && !isChakra) {
-                  // "No sessions yet" was actively wrong for a signed-out
-                  // visitor: the sessions exist, they are just not readable
-                  // yet. Saying so, with a way in, beats telling someone the
-                  // category is empty.
-                  return _emptyState(context, signedIn: isSignedIn);
+                  // The catalogue is public, including for a guest, so an
+                  // empty list here really is an empty category.
+                  return _emptyState(context);
                 }
                 if (isChakra) {
                   return const SizedBox.shrink();
                 }
-                final hasAccess = ref.watch(hasFullAccessProvider);
                 return ListView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                   itemCount: list.length,
@@ -79,45 +78,31 @@ class LibraryScreen extends ConsumerWidget {
     );
   }
 
-  Widget _emptyState(BuildContext context, {required bool signedIn}) => Center(
+  Widget _emptyState(BuildContext context) => Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(signedIn ? Icons.spa_outlined : Icons.lock_outline,
-                  size: 34, color: DHColors.mossGreen),
+              const Icon(Icons.spa_outlined, size: 34, color: DHColors.mossGreen),
               const SizedBox(height: 12),
               Text(
-                signedIn
-                    ? 'Nothing in this category yet.'
-                    : 'Sign in to see these sessions',
+                'Nothing in this category yet.',
                 style: DHTypography.heading(size: 16),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 6),
               Text(
-                signedIn
-                    ? 'New sessions are added here as they are published.'
-                    : 'The full library is here — signing in reveals it. '
-                        'A 7-day free trial, then half price, then the full '
-                        'price, unlocks the audio.',
+                'New sessions are added here as they are published.',
                 style: DHTypography.body(size: 13, height: 1.5),
                 textAlign: TextAlign.center,
               ),
-              if (!signedIn) ...[
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => context.push('/sign-in'),
-                  child: const Text('Sign in'),
-                ),
-              ],
             ],
           ),
         ),
       );
 
-  Widget _signInPrompt(BuildContext context, int? sessionCount) =>
+  Widget _trialPrompt(BuildContext context, int? sessionCount) =>
       Container(
         width: double.infinity,
         margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
@@ -152,14 +137,14 @@ class LibraryScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Free preview',
+                  Text('Start your 7-day free trial',
                       style: DHTypography.heading(size: 14)),
                   const SizedBox(height: 2),
                   Text(
                     sessionCount == null
-                        ? 'Sign in to unlock every guided session.'
-                        : 'Sign in to unlock all $sessionCount guided '
-                            'sessions.',
+                        ? '\$0 today, then half price. Cancel anytime.'
+                        : '\$0 today for all $sessionCount sessions, then '
+                            'half price. Cancel anytime.',
                     style: DHTypography.caption(color: DHColors.secondary),
                   ),
                 ],
@@ -167,13 +152,17 @@ class LibraryScreen extends ConsumerWidget {
             ),
             const SizedBox(width: 8),
             ElevatedButton(
-              onPressed: () => context.push('/sign-in'),
+              onPressed: () => openPaywall(
+                context,
+                source: 'library',
+                returnTo: GoRouterState.of(context).uri.toString(),
+              ),
               style: ElevatedButton.styleFrom(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 textStyle: DHTypography.button(size: 13),
               ),
-              child: const Text('Sign in'),
+              child: const Text('Free trial'),
             ),
           ],
         ),
@@ -325,16 +314,26 @@ class _SessionCard extends StatelessWidget {
 
     return InkWell(
       onTap: () {
-        // Shadow work sessions have a 3-step wizard, not a plain player.
-        if (s.category == 'shadow_work') {
-          context.push('/shadow-work/${s.id}');
-        } else if (s.category == 'reiki') {
-          // Reiki is written content, not a track — the detail screen would
-          // show a title and nothing else.
-          context.push('/reiki');
-        } else {
-          context.push('/content/${s.id}');
+        // Shadow work opens on its explanation, which stays free. Reiki is
+        // the written introduction, which is a free preview. A locked
+        // meditation goes straight to the trial.
+        final dest = switch (s.category) {
+          'shadow_work' => '/shadow-work/${s.id}',
+          'reiki' => '/reiki',
+          _ => '/content/${s.id}',
+        };
+        final straightToPaywall = !_unlocked &&
+            s.category != 'shadow_work' &&
+            s.category != 'reiki';
+        if (straightToPaywall) {
+          AnalyticsService.instance.logLockedContentTap(
+            contentId: s.id.toString(),
+            contentType: s.category,
+          );
+          openPaywall(context, source: 'locked_content', returnTo: dest);
+          return;
         }
+        context.push(dest);
       },
       borderRadius: BorderRadius.circular(DHRadius.card),
       child: Container(
@@ -376,11 +375,7 @@ class _SessionCard extends StatelessWidget {
                         const SizedBox(width: 8),
                       ],
                       if (isFree) _freeBadge(),
-                      if (!_unlocked && s.hasAudio) ...[
-                        Icon(Icons.lock_outline,
-                            size: 12,
-                            color: DHColors.secondary.withOpacity(0.7)),
-                      ],
+                      if (!_unlocked) const FreeTrialBadge(),
                       if (!s.hasAudio && s.category != 'shadow_work') ...[
                         const SizedBox(width: 4),
                         Text('Text only',

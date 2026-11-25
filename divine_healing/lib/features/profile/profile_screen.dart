@@ -16,6 +16,8 @@ import '../../providers/account_providers.dart';
 import '../../services/account_deletion_service.dart';
 import '../../services/analytics_service.dart';
 import '../../services/purchases_service.dart';
+import '../paywall/open_paywall.dart';
+import '../paywall/plan_price_header.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -159,16 +161,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
-  /// The count comes from the catalogue rather than being written out, so it
-  /// cannot promise a number the library no longer has. Null while loading —
-  /// the sentence simply drops the figure rather than flashing a wrong one.
-  static List<String> _benefits(int? sessionCount) => [
-        sessionCount == null
-            ? 'Every guided session'
-            : '$sessionCount guided sessions',
-        'All journaling & exercises',
-        'All future content',
-      ];
+  static List<String> _benefits(int? sessionCount) =>
+      PlanFallback.benefits(sessionCount);
 
   Widget _userCard(
     BuildContext context,
@@ -177,7 +171,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     required String? displayName,
   }) {
     if (user == null) {
-      return _SignedOutCard(onTap: () => context.push('/sign-in'));
+      return _SignedOutCard(
+        onTap: () => openSignIn(context),
+      );
     }
     return _SignedInCard(
       email: (user.email as String?) ?? '',
@@ -207,6 +203,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     String paymentLink,
     String? email, {
     required bool annual,
+    required bool hasTrial,
   }) async {
     // No sign-in gate. App Review rejected build 23 under guideline
     // 5.1.1(v): a subscription that opens the same library for everyone is
@@ -219,7 +216,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     // browser link is exactly what they reject for. The web build keeps
     // Stripe: no store is involved there and it costs no commission.
     if (PurchasesService.isAvailable) {
-      await _buyThroughStore(context, annual: annual);
+      await _buyThroughStore(context, annual: annual, hasTrial: hasTrial);
       return;
     }
     final url = Uri.parse(StripeLinks.withEmail(paymentLink, email));
@@ -246,6 +243,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _buyThroughStore(
     BuildContext context, {
     required bool annual,
+    required bool hasTrial,
   }) async {
     if (!await _ensurePurchasesReady()) {
       // A guest reaches here only if the anonymous session never came up —
@@ -289,7 +287,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       currency: package.storeProduct.currencyCode,
     );
 
-    final outcome = await service.buy(package);
+    final outcome = await service.buy(package, hasTrial: hasTrial);
     if (!context.mounted) return;
     switch (outcome) {
       case PurchaseOutcome.purchased:
@@ -349,7 +347,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ref.invalidate(subscriptionStatusProvider);
       final status = await ref.read(subscriptionStatusProvider.future);
       if (status.hasFullAccess) {
-        if (context.mounted) _say(context, 'You are all set. Enjoy.');
+        if (context.mounted) {
+          final guest = ref.read(isSignedInProvider) == false;
+          _say(
+            context,
+            guest
+                ? 'You are all set. Sign in any time to keep this trial on '
+                    'your other devices.'
+                : 'You are all set. Enjoy.',
+          );
+        }
         return;
       }
       await Future<void>.delayed(const Duration(seconds: 2));
@@ -473,8 +480,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             context: context,
             sessionCount: sessionCount,
             tag: 'ANNUAL · BEST VALUE',
-            price: PlanFallback.annualFull,
-            period: '/year',
             subtitle: PlanFallback.annualTerms,
             highlighted: true,
             paymentLink: StripeLinks.annual,
@@ -486,8 +491,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             context: context,
             sessionCount: sessionCount,
             tag: 'MONTHLY',
-            price: PlanFallback.monthlyFull,
-            period: '/month',
             subtitle: PlanFallback.monthlyTerms,
             highlighted: false,
             paymentLink: StripeLinks.monthly,
@@ -522,15 +525,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
       );
 
-  /// One plan card built from the store's own pricing. The big number is the
-  /// discounted price when there is one — including the price charged after a
-  /// free trial that leads into a discount — and the line beneath names every
-  /// phase, which both stores require shown.
+  /// One plan card built from the store's own pricing. A free trial leads
+  /// with "$0 today"; the line beneath names every phase the store will
+  /// charge and that the plan auto-renews.
   Widget _offerCard(BuildContext context, PlanOffer offer, int? sessionCount,
       String? email) {
     final highlighted = offer.annual;
     final tag = offer.annual ? 'ANNUAL · BEST VALUE' : 'MONTHLY';
-    final bigPrice = offer.displayPrice;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -558,22 +559,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ],
           ),
           const SizedBox(height: 6),
-          RichText(
-            text: TextSpan(
-              style: DHTypography.heading(size: 28, weight: FontWeight.w600),
-              children: [
-                TextSpan(text: bigPrice),
-                TextSpan(
-                  text: offer.displayPeriodLabel,
-                  style:
-                      DHTypography.body(size: 13, color: DHColors.secondary),
-                ),
-              ],
-            ),
+          PlanPriceHeader(
+            headline: offer.trialHeadline,
+            price: offer.hasFreeTrial ? offer.todayLabel : offer.displayPrice,
+            period: offer.hasFreeTrial ? null : offer.displayPeriodLabel,
+            disclosure: offer.disclosureLine,
           ),
-          const SizedBox(height: 4),
-          Text(offer.termsLine,
-              style: DHTypography.body(size: 12, color: DHColors.secondary)),
           const SizedBox(height: 12),
           ..._benefits(sessionCount).map(
             (b) => Padding(
@@ -598,6 +589,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 offer.annual ? StripeLinks.annual : StripeLinks.monthly,
                 email,
                 annual: offer.annual,
+                hasTrial: offer.hasFreeTrial,
               ),
               child: Text(offer.buttonLabel),
             ),
@@ -622,8 +614,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     required BuildContext context,
     required int? sessionCount,
     required String tag,
-    required String price,
-    required String period,
     required String subtitle,
     required bool highlighted,
     required String paymentLink,
@@ -651,22 +641,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               style: DHTypography.caption(color: DHColors.forestGreen),
             ),
             const SizedBox(height: 6),
-            RichText(
-              text: TextSpan(
-                style: DHTypography.heading(size: 28, weight: FontWeight.w600),
-                children: [
-                  TextSpan(text: price),
-                  TextSpan(
-                    text: period,
-                    style: DHTypography.body(size: 13, color: DHColors.secondary),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              subtitle,
-              style: DHTypography.body(size: 12, color: DHColors.secondary),
+            PlanPriceHeader(
+              headline: 'Start your 7-day free trial',
+              price: '\$0 today',
+              disclosure: PlanFallback.disclose(subtitle),
             ),
             const SizedBox(height: 12),
             ..._benefits(sessionCount).map(
@@ -688,9 +666,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () =>
-                      _startCheckout(context, paymentLink, email,
-                          annual: annual),
+                onPressed: () => _startCheckout(
+                      context,
+                      paymentLink,
+                      email,
+                      annual: annual,
+                      hasTrial: true,
+                    ),
                 child: const Text(PlanFallback.buttonLabel),
               ),
             ),
@@ -830,7 +812,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '2 preview meditations · Reiki & Spiritual Awakening info · Bookings',
+                    '3 preview sessions, plus a sample of each guide',
                     style: DHTypography.body(size: 11, color: DHColors.secondary),
                   ),
                 ],

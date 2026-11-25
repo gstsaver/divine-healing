@@ -40,6 +40,14 @@ void main() {
       r'then CAD $149.99/year. Cancel anytime.',
     );
     expect(PlanFallback.buttonLabel, 'Start 7-day free trial, then half price');
+    expect(
+      PlanFallback.disclose(PlanFallback.monthlyTerms),
+      contains('Auto-renews until you cancel'),
+    );
+    expect(
+      PlanFallback.benefits(23),
+      contains('Cancel anytime in Google Play or the App Store'),
+    );
     expect(PlanFallback.monthlyTerms, isNot(contains(r'$19')));
     expect(PlanFallback.annualTerms, isNot(contains(r'$149/')));
   });
@@ -110,7 +118,9 @@ void main() {
       access: 'the library',
       offers: const [trialOnly],
     );
-    expect(body, contains('Sign in and start your 7-day free trial'));
+    expect(body, contains('Start your 7-day free trial'));
+    expect(body, contains('No account is required'));
+    expect(body, isNot(contains('Sign in')));
     expect(body, isNot(contains('half price')));
     expect(body, contains(trialOnly.termsLine));
   });

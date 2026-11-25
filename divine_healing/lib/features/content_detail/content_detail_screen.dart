@@ -9,7 +9,9 @@ import '../../providers/auth_providers.dart';
 import '../../providers/content_providers.dart';
 import '../../providers/subscription_providers.dart';
 import '../../providers/user_data_providers.dart';
+import '../../services/analytics_service.dart';
 import '../../theme.dart';
+import '../paywall/open_paywall.dart';
 import '../player/session_playback.dart';
 
 /// Session detail with a real audio player backed by `just_audio`, streaming
@@ -287,7 +289,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
-              context.push('/sign-in');
+              openSignIn(context, returnTo: '/content/${widget.contentId}');
             },
             child: const Text('Sign in'),
           ),
@@ -297,40 +299,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen> {
   }
 
   void _promptPaywall() {
-    final signedIn = ref.read(isSignedInProvider);
-    final count = ref.read(sessionCountProvider);
-    final offers = ref.read(storePlanOffersProvider).valueOrNull ?? const [];
-    final library =
-        count == null ? 'every guided session' : '$count guided sessions';
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Unlock the full library'),
-        content: Text(
-          PlanFallback.unlockMessage(
-            signedIn: signedIn,
-            access: library,
-            offers: offers,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Not now'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              // go, not push: /profile lives inside the tab shell, and
-              // pushing a branch route on top of the shell renders the
-              // bar with nothing above it. home_screen has always used go.
-              context.go(signedIn ? '/profile' : '/sign-in');
-            },
-            child: Text(
-                signedIn ? PlanFallback.lockedButton(offers) : 'Sign in'),
-          ),
-        ],
-      ),
+    AnalyticsService.instance.logLockedContentTap(
+      contentId: widget.contentId.toString(),
+      contentType: 'session',
+    );
+    openPaywall(
+      context,
+      source: 'locked_content',
+      returnTo: '/content/${widget.contentId}',
     );
   }
 
@@ -371,7 +347,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen> {
           const SizedBox(height: 18),
           if (locked) ...[
             Text(
-              'Members only',
+              'Free trial',
               style: DHTypography.caption(color: DHColors.strawberryBlush)
                   .copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.5),
             ),
